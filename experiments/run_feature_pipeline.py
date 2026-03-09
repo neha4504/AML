@@ -58,7 +58,7 @@ def main(
     if sample_fraction:
         logger.info(f"Sampling fraction: {sample_fraction}")
 
-    # Build features. compute_anomaly_scores=False to ensure no anomaly/XGBoost work
+    # Build features
     train_path, val_path, test_path = build_all_features(
         transactions_path=transactions_path,
         accounts_path=accounts_path,
