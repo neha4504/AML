@@ -32,7 +32,7 @@ def compute_burst_score(df: pl.LazyFrame) -> pl.LazyFrame:
     # 2. Rolling mean on txn count (48-hour = ~500 rows assuming regular txns)
     df = df.with_columns([
         pl.col('txn_in_hour').cast(pl.Float32)
-            .rolling_mean(window_size=48)
+            .rolling_mean(window_size=500)
             .over('Account_HASHED')
             .fill_null(1.0)
             .alias('baseline_txn_per_hour_24h')
@@ -238,7 +238,7 @@ def compute_round_number_patterns(df: pl.LazyFrame) -> pl.LazyFrame:
             .alias('consecutive_round_density_5txn'),
     ])
 
-    return df.drop('is_multiple_1000')
+    return df
 
 
 def compute_anomaly_cascade_features(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -279,7 +279,6 @@ def compute_anomaly_cascade_features(df: pl.LazyFrame) -> pl.LazyFrame:
 def add_advanced_rolling_features(df: pl.LazyFrame) -> pl.LazyFrame:
     """
     Add all advanced rolling features - LAZY VERSION.
-    
     """
     import logging
     logger = logging.getLogger(__name__)

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def compute_counterparty_entropy(df: pl.LazyFrame, chunk_size: int = 10000) -> pl.LazyFrame:
     """
-    Shannon entropy-like diversity metrics for counterparties.
+    shannon entropy-like diversity metrics for counterparties.
     """
     logger = logging.getLogger(__name__)
     
@@ -60,9 +60,8 @@ def compute_counterparty_entropy(df: pl.LazyFrame, chunk_size: int = 10000) -> p
 
 def compute_counterparty_switching_metrics(df: pl.LazyFrame) -> pl.LazyFrame:
     """
-    Detect round-robin money laundering (switching between counterparties).
-    
-    If A->X->A->Y->A pattern, that's suspicious.
+    detect round-robin money laundering (switching between counterparties).
+    if A->X->A->Y->A pattern, that's suspicious.
     """
 
     # 1. Counterparty switches
@@ -113,14 +112,21 @@ def compute_counterparty_switching_metrics(df: pl.LazyFrame) -> pl.LazyFrame:
 
 def compute_network_balance_ratios(df: pl.LazyFrame) -> pl.LazyFrame:
     """
-    Inflow vs outflow balance (money mule and pass-through detection).
+    inflow vs outflow balance (money mule and pass-through detection).
     
     - Mule: High inflow, low outflow
     - Pass-through: inflow ≈ outflow
     - Collector: Many inflows, few outflows
     """
    
-    
+    required = ['total_amount_received_28d', 'total_amount_paid_28d', 'txn_count_28d']
+    schema = df.collect_schema()
+    missing = [c for c in required if c not in schema]
+    if missing:
+        raise ValueError(
+            f"compute_network_balance_ratios requires rolling features first. "
+            f"Missing: {missing}"
+        )
     # 1. Balance metrics
     df = df.with_columns([
         (pl.col('total_amount_received_28d') / 
@@ -166,9 +172,8 @@ def compute_network_balance_ratios(df: pl.LazyFrame) -> pl.LazyFrame:
 
 def compute_temporal_counterparty_patterns(df: pl.LazyFrame) -> pl.LazyFrame:
     """
-    Time-of-day patterns in counterparty selection.
-    
-    Automated systems have consistent patterns (suspicious).
+    time-of-day patterns in counterparty selection.
+    automated systems have consistent patterns (suspicious).
     """
   
     
@@ -192,9 +197,8 @@ def compute_temporal_counterparty_patterns(df: pl.LazyFrame) -> pl.LazyFrame:
 
 def compute_relationship_asymmetry(df: pl.LazyFrame) -> pl.LazyFrame:
     """
-    Detect one-way relationships (A→B but B doesn't send to A).
-    
-    Typical of money mules and launderers.
+    detect one-way relationships (A→B but B doesn't send to A).
+    typical of money mules and launderers.
     """
    
     
@@ -236,7 +240,7 @@ def compute_relationship_asymmetry(df: pl.LazyFrame) -> pl.LazyFrame:
     # 4. Volume asymmetry
     df = df.with_columns([
         (pl.col('Amount Paid') / 
-         (pl.col('Amount Paid').shift(-1).over('account_pair_directed') + 0.000001))
+         (pl.col('Amount Paid').shift(1).over('account_pair_directed') + 0.000001))
         .fill_null(1.0)
         .cast(pl.Float32)
         .alias('amount_asymmetry_with_counterparty')
@@ -247,9 +251,8 @@ def compute_relationship_asymmetry(df: pl.LazyFrame) -> pl.LazyFrame:
 
 def compute_network_centrality_proxy(df: pl.LazyFrame) -> pl.LazyFrame:
     """
-    Proxy for hub-and-spoke network detection.
-    
-    Hubs (mules) have many connections as in/out nodes.
+    proxy for hub-and-spoke network detection.
+    hubs (mules) have many connections as in/out nodes.
     """
     
     

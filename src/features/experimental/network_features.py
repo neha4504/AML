@@ -98,17 +98,17 @@ def compute_account_network_features(df: pl.LazyFrame) -> pl.LazyFrame:
     # Bank repeat rate: proportion of repeat banks (using 200-row window ≈ 7d)
     df = df.with_columns([
         # 7dayproxy (120 rows)
-        pl.col('is_same_bank')
+        (pl.col('is_same_bank')
             .rolling_sum(window_size=120)
-            .over('Account_HASHED')
+            .over('Account_HASHED') / 120.0)
             .shift(1)
             .fill_null(0)
             .cast(pl.Float32)
             .alias('bank_repeat_rate_7d'),
         
-        pl.col('is_same_bank')
+        (pl.col('is_same_bank')
             .rolling_sum(window_size=500)
-            .over('Account_HASHED')
+            .over('Account_HASHED') /120.0)
             .shift(1)
             .fill_null(0)
             .cast(pl.Float32)
@@ -124,58 +124,58 @@ def compute_account_network_features(df: pl.LazyFrame) -> pl.LazyFrame:
     return df.drop('is_same_bank')
 
 
-# def compute_corridor_risk_score(df: pl.LazyFrame) -> pl.LazyFrame:
-    # """
-    # Create corridor-level risk aggregation feature.
+def compute_corridor_risk_score(df: pl.LazyFrame) -> pl.LazyFrame:
+    """
+    Create corridor-level risk aggregation feature.
     
-    # Combines From Bank -> To Bank corridor information with transaction specifics.
-    # """
-    # logger.info("Computing corridor-level features...")
+    Combines From Bank -> To Bank corridor information with transaction specifics.
+    """
+    logger.info("Computing corridor-level features...")
     
-    # df = df.with_columns([
-    #     # Create a corridor identifier
-    #     (pl.col('From Bank').cast(pl.Utf8) + '_to_' + pl.col('To Bank').cast(pl.Utf8))
-    #         .alias('corridor')
-    # ])
+    df = df.with_columns([
+        # create a corridor identifier
+        (pl.col('From Bank').cast(pl.Utf8) + '_to_' + pl.col('To Bank').cast(pl.Utf8))
+            .alias('corridor')
+    ])
     
-    # # Compute corridor statistics in rolling windows (500-row window ≈ 28d)
-    # df = df.with_columns([
-    #     pl.col('Amount Paid')
-    #         .rolling_mean(window_size=500)
-    #         .over('corridor')
-    #         .shift(1)
-    #         .fill_null(0)
-    #         .alias('corridor_mean_amount_28d'),
+    # Compute corridor statistics in rolling windows (500-row window ≈ 28d)
+    df = df.with_columns([
+        pl.col('Amount Paid')
+            .rolling_mean(window_size=500)
+            .over('corridor')
+            .shift(1)
+            .fill_null(0)
+            .alias('corridor_mean_amount_28d'),
         
-    #     pl.col('Amount Paid')
-    #         .rolling_std(window_size=500)
-    #         .over('corridor')
-    #         .shift(1)
-    #         .fill_null(0)
-    #         .alias('corridor_std_amount_28d'),
-    # ])
+        pl.col('Amount Paid')
+            .rolling_std(window_size=500)
+            .over('corridor')
+            .shift(1)
+            .fill_null(0)
+            .alias('corridor_std_amount_28d'),
+    ])
     
-    # return df
+    return df
 
 
 def add_network_features(df: pl.DataFrame) -> pl.DataFrame:
     """ 
     Add all network features
     """
-    # Defensive check: ensure the input is a Polars DataFrame or LazyFrame to
+    # defensive check: ensure the input is a Polars DataFrame or LazyFrame to
     # catch regressions where a different type (e.g., a tuple) is passed in.
-    assert isinstance(df, (pl.DataFrame, pl.LazyFrame)), (
+    assert isinstance(df, pl.LazyFrame), (
         "add_network_features expects a Polars DataFrame or LazyFrame"
     )
 
-    # logger.info("  Computing bank centrality...")
-    # df = compute_bank_centrality_features(df)
+    logger.info("  Computing bank centrality...")
+    df = compute_bank_centrality_features(df)
 
     logger.info("  Computing account network....")
     df = compute_account_network_features(df)
 
-    # logger.info("  Computing corridor risk score...")
-    # df = compute_corridor_risk_score(df)
+    logger.info("  Computing corridor risk score...")
+    df = compute_corridor_risk_score(df)
 
     # Return the enhanced DataFrame. Keep networks in local variables in case
     # they are needed later; if needed, consider returning them as well.

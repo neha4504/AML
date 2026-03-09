@@ -43,7 +43,7 @@ from src.features.experimental.counterparty_entropy_features_v2 import (
 
 from src.utils.hashing import hash_pii_column
 from src.features.experimental.network_features import add_network_features
-from src.features.experimental.toxic_corridors import apply_toxic_corridor_features
+from src.features.experimental.toxic_corridors import apply_toxic_corridor_features, derive_toxic_corridors
 
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,8 @@ def process_spilts_in_batches(
     split_name: str,
     entity_stats_lazy: Optional[pl.LazyFrame],
     output_dir: Path, 
-    batch_size: int = 10000
+    batch_size: int = 10000,
+    toxic_corridors=None
 ) -> Path:
 
     logger.info(f"BATCH PROCESSING: {split_name.upper()}")
@@ -136,7 +137,7 @@ def process_spilts_in_batches(
         
         # 8. Toxic corridors
         logger.info("   Step 8: Toxic corridor features...")
-        df_batch = apply_toxic_corridor_features(df_batch, toxic_corridors=None)
+        df_batch = apply_toxic_corridor_features(df_batch, toxic_corridors=toxic_corridors)
         
         # Collect this batch
         logger.info(f"   Collecting batch {batch_idx+1} (streaming)...")
@@ -171,7 +172,8 @@ def build_training_features(
     val_df: pl.LazyFrame,
     test_df: pl.LazyFrame,
     accounts: Optional[pl.DataFrame] = None,
-    output_dir: Path = Path('./aml_features')
+    output_dir: Path = Path('./aml_features'),
+    toxic_corridors=None
 ) -> Tuple[Path, Path, Path]:
 
     """
@@ -222,7 +224,8 @@ def build_training_features(
             df=df, split_name=split_name,
             entity_stats_lazy=entity_stats_lazy,
             output_dir=output_dir,
-            batch_size=15000
+            batch_size=15000,
+            toxic_corridors=toxic_corridors
         )
         processed_splits[split_name] = output_path
         logger.info(f"\n{split_name.upper()} split complete")
@@ -289,7 +292,7 @@ def validate_features(file_path: Path) -> Dict:
     logger.info(f"  Total features: {validation_report['num_features']}")
     
     # Class balance
-    target_col = 'Is Laundering' if 'Is Laundering' in cols else ('Is Laundering' if 'Is Laundering' in cols else None)
+    target_col = 'Is Laundering'
     if target_col:
         class_counts = df_lazy.group_by(target_col).len().collect()
         logger.info(f"\n Class Distribution: ")
@@ -299,28 +302,67 @@ def validate_features(file_path: Path) -> Dict:
     return validation_report
 
 
-# def save_features(
-#     train_df: pl.DataFrame,
-#     val_df: pl.DataFrame,
-#     test_df: pl.DataFrame,
-#     output_dir: Path
-# ):
-#     """Save feature sets to disk."""
-#     output_dir = Path(output_dir)
-#     output_dir.mkdir(exist_ok=True, parents=True)
-    
-#     logger.info("\n" + "="*70)
-#     logger.info("Saving Features")
-#     logger.info("="*70)
-    
-#     for split_name, df in [('train', train_df), ('val', val_df), ('test', test_df)]:
-#         output_path = output_dir / f'{split_name}_features.parquet'
-#         df.write_parquet(output_path, compression='zstd')
-#         logger.info(f" {split_name}: {len(df)} rows → {output_path}")
+def create_temporal_splits(
+    trans: pl.LazyFrame,
+) -> Tuple[pl.LazyFrame, pl.LazyFrame, pl.LazyFrame]:
+    """
+    Splits transactions chronologically using only dense days (1-16).
 
-#         del df
-#         import gc
-#         gc.collect()
+    Why days 1-16 only:
+        The IBM HI-Medium dataset has a hard cliff after day 16.
+        Days 17-28 contain ~11,000 rows total vs ~2M+ per day in
+        the dense window. Using sparse days as test produces a 60%
+        fraud rate and 882 rows — statistically meaningless for
+        any evaluation metric.
+
+    Why sparse tail goes into train:
+        Those ~848 fraud cases in days 17-28 are real signal.
+        They should contribute to model learning, not contaminate
+        evaluation. Folding them into train preserves the signal
+        without distorting metrics.
+
+    Split:
+        Train  : days 1-11  + sparse tail (days 17-28)
+        Val    : days 12-13
+        Test   : days 14-16
+    """
+    dense_train = trans.filter(
+        pl.col("Timestamp").dt.day() <= 11
+    )
+
+    val_df = trans.filter(
+        (pl.col("Timestamp").dt.day() >= 12) &
+        (pl.col("Timestamp").dt.day() <= 13)
+    )
+
+    test_df = trans.filter(
+        (pl.col("Timestamp").dt.day() >= 14) &
+        (pl.col("Timestamp").dt.day() <= 16)
+    )
+
+    # sparse tail folded into train — too few rows for evaluation
+    # but valid as additional training signal
+    sparse_tail = trans.filter(
+        pl.col("Timestamp").dt.day() > 16
+    )
+    train_df = pl.concat([dense_train, sparse_tail])
+
+    # log what each split actually contains so you can verify
+    for name, df in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        stats = df.select([
+            pl.len().alias("rows"),
+            pl.col("Is Laundering").sum().alias("fraud"),
+            pl.col("Timestamp").dt.day().min().alias("day_start"),
+            pl.col("Timestamp").dt.day().max().alias("day_end"),
+        ]).collect()
+        logger.info(
+            f"{name}: {stats['rows'].item():,} rows | "
+            f"fraud={int(stats['fraud'].item()):,} | "
+            f"days {stats['day_start'].item()}- {stats['day_end'].item()}"
+        )
+
+    return train_df, val_df, test_df
+    
 
 def build_all_features(
     transactions_path: Path,
@@ -394,48 +436,30 @@ def build_all_features(
     trans = hash_pii_column(trans, 'Account')
     trans = trans.with_columns(pl.col('Account_HASHED').cast(pl.Utf8))
     
-    # Create temporal splits
     logger.info("Creating temporal splits...")
-    max_timestamp = trans.select(pl.col('Timestamp').max()).collect()[0, 0]
-    
-    test_start = max_timestamp - pl.duration(days=7)
-    val_start = test_start - pl.duration(days=7)
-    
-    train_df = (
-        trans.filter(pl.col('Timestamp') < val_start).sort(['Account_HASHED', 'Timestamp'])
-        )
-    val_df = (trans.filter(
-        (pl.col('Timestamp') >= val_start) & (pl.col('Timestamp') < test_start)).sort(['Account_HASHED', 'Timestamp'])
-    )
-    test_df = (
-        trans.filter(pl.col('Timestamp') >= test_start).sort(['Account_HASHED', 'Timestamp'])
-        )
-    
+    train_df, val_df, test_df = create_temporal_splits(trans)
     del trans
     import gc
     gc.collect()
 
+    logger.info("Deriving toxic corridors from training data...")
+    toxic_corridors = derive_toxic_corridors(
+    train_df=train_df,   # training data only  no leakage
+    threshold=0.02
+)
+
     # Build features
     train_path, val_path, test_path = build_training_features(
-        train_df, val_df, test_df, accounts, output_dir
+        train_df, val_df, test_df, accounts, output_dir, toxic_corridors=toxic_corridors
     )
     
     # Validate
     validate_features(train_path)
-    
-    # Save
-    #save_features(train_features, val_features, test_features, output_dir)
-    
+   
     logger.info("\n" + "="*70)
-    logger.info("✅ FEATURE ENGINEERING COMPLETE")
+    logger.info(" FEATURE ENGINEERING COMPLETE")
     logger.info("="*70)
-    
-    # return (
-    #     output_dir / 'train_features.parquet',
-    #     output_dir / 'val_features.parquet',
-    #     output_dir / 'test_features.parquet'
-    # )
-
+   
     return train_path, val_path, test_path
 
 if __name__ == '__main__':

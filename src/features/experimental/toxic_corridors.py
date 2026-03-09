@@ -1,8 +1,48 @@
 import polars as pl
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+def derive_toxic_corridors(
+    train_df: pl.LazyFrame,
+    threshold: float = 0.02
+) -> pl.DataFrame:
+    """
+    Compute fraud rate per From Bank → To Bank corridor
+    from the raw training LazyFrame.
+    Only needs three columns — From Bank, To Bank, Is Laundering.
+    Must use training data only to avoid leakage into val/test.
+    """
+    corridors = (
+        train_df
+        .group_by(['From Bank', 'To Bank'])
+        .agg([
+            pl.len().alias('total_txns'),
+            pl.col('Is Laundering').sum().alias('fraud_txns'),
+        ])
+        .with_columns([
+            (pl.col('fraud_txns') / pl.col('total_txns'))
+            .cast(pl.Float32)
+            .alias('fraud_rate')
+        ])
+        .filter(pl.col('total_txns') >= 100)
+        .with_columns([
+            (pl.col('fraud_rate') >= threshold)
+            .cast(pl.Int8)
+            .alias('is_toxic_corridor')
+        ])
+        .collect()
+    )
+
+    n_toxic = corridors.filter(pl.col('is_toxic_corridor') == 1).height
+    n_total = corridors.height
+    logger.info(
+        f"Derived {n_toxic} toxic corridors out of {n_total} "
+        f"(threshold={threshold:.1%}, min_txns=100)"
+    )
+    return corridors
+    
 
 def apply_toxic_corridor_features(df: pl.LazyFrame, toxic_corridors: pl.DataFrame | None=None) -> pl.LazyFrame:
   """
