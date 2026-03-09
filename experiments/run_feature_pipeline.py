@@ -63,7 +63,6 @@ def main(
         transactions_path=transactions_path,
         accounts_path=accounts_path,
         output_dir=output_dir,
-        compute_anomaly_scores=False,
         sample_fraction=sample_fraction
     )
 
