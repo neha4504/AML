@@ -41,8 +41,6 @@ def add_base_features(df: pl.LazyFrame) -> pl.LazyFrame:
         (2 * np.pi * pl.col('Timestamp').dt.weekday() / 7).sin().cast(pl.Float32).alias('day_of_week_sin'),
         (2 * np.pi * pl.col('Timestamp').dt.weekday() / 7).cos().cast(pl.Float32).alias('day_of_week_cos'),
         
-        (2 * np.pi * pl.col('Timestamp').dt.day() / 31).sin().cast(pl.Float32).alias('day_of_month_sin'),
-        (2 * np.pi * pl.col('Timestamp').dt.day() / 31).cos().cast(pl.Float32).alias('day_of_month_cos')
     ]
 
     df = df.with_columns(cyclical_features)

@@ -78,10 +78,10 @@ def process_spilts_in_batches(
     n_acc = len(unique_acc)
     n_batches = (n_acc + batch_size -1)// batch_size
 
-    logger.info(f"   Total accounts: {n_acc:,}")
-    logger.info(f"   Batch size: {batch_size:,} accounts")
-    logger.info(f"   Number of batches: {n_batches}")
-    logger.info(f"   Estimated time: {n_batches * 15}-{n_batches * 25} minutes")
+    logger.info(f"Total accounts: {n_acc:,}")
+    logger.info(f"Batch size: {batch_size:,} accounts")
+    logger.info(f"Number of batches: {n_batches}")
+    logger.info(f"Estimated time: {n_batches * 15}-{n_batches * 25} minutes")
 
     batch_results = []
 
@@ -98,7 +98,7 @@ def process_spilts_in_batches(
         # 0. Optimize dtypes
         df_batch = optimize_dtypes(df_batch)
         
-        # 1. Sort for rolling features
+        # 1.Sort for rolling features
         logger.info("   Step 1: Sorting(maintained through pipeline)...")
         df_batch = df_batch.sort(['Account_HASHED', 'Timestamp'])
 
@@ -111,7 +111,7 @@ def process_spilts_in_batches(
             df_batch = df_batch.with_columns(pl.lit(split_name).alias('__split__'))
             df_batch = pl.concat([train_batch, df_batch]).sort(['Account_HASHED', 'Timestamp'])
         
-        # 2. Base features
+        # 2.Base features
         logger.info("   Step 2: Base features...")
         df_batch = add_base_features(df_batch)
 
@@ -124,28 +124,28 @@ def process_spilts_in_batches(
             if entity_stats_lazy is not None:
                 assert 'Account Number_HASHED' in entity_stats_lazy.columns, "entity_stats must contain Account Number_HASHED for join"
 
-        # 3. Standard rolling features (from original pipeline)
+        # 3.Standard rolling features (from original pipeline)
         logger.info("   Step 3: Standard rolling features...")
         df_batch = compute_rolling_features(df_batch)
    
-        # 4. Derived/ratio features
+        # 4.Derived/ratio features
         logger.info("   Step 4: Ratio and Derived features...")
         df_batch = compute_advanced_features(df_batch)
         df_batch = compute_derived_features(df_batch)
 
-        # 5. Advanced rolling features
+        # 5.Advanced rolling features
         logger.info("   Step 5: Advanced rolling features...")
         df_batch = add_advanced_rolling_features(df_batch)
         
-        # 6. Counterparty entropy
+        # 6.Counterparty entropy
         logger.info("   Step 6: Counterparty entropy features...")
         df_batch = add_counterparty_entropy_features(df_batch)
         
-        # 7. Network features
+        # 7.Network features
         logger.info("   Step 7: Network features...")
         df_batch = add_network_features(df_batch)
         
-        # 8. Toxic corridors
+        # 8.Toxic corridors
         logger.info("   Step 8: Toxic corridor features...")
         df_batch = apply_toxic_corridor_features(df_batch, toxic_corridors=toxic_corridors)
         

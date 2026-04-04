@@ -54,7 +54,7 @@ def compute_burst_score(df: pl.LazyFrame) -> pl.LazyFrame:
         .alias('burst_count_24h')
     ])
 
-    return df.drop('hour_window', 'txn_in_hour', 'baseline_txn_per_hour_24h')
+    return df.drop('hour_window', 'baseline_txn_per_hour_24h')
 
 
 def compute_timegap_statistics(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -151,7 +151,7 @@ def compute_velocity_metrics(df: pl.LazyFrame) -> pl.LazyFrame:
         .alias('amount_acceleration_2nd_order'),
     ])
 
-    return df.drop('amount_paid_last_100')
+    return df
 
 
 def compute_concentration_metrics(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -272,8 +272,8 @@ def compute_anomaly_cascade_features(df: pl.LazyFrame) -> pl.LazyFrame:
     ])
 
     # drop temp flags
-    flag_cols = [c for c in df.columns if c.startswith('flag_')]
-    return df.drop(flag_cols)
+    #flag_cols = [c for c in df.columns if c.startswith('flag_')]
+    return df #.drop(flag_cols)
 
 
 def add_advanced_rolling_features(df: pl.LazyFrame) -> pl.LazyFrame:

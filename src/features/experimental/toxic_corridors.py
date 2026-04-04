@@ -89,7 +89,8 @@ def apply_toxic_corridor_features(df: pl.LazyFrame, toxic_corridors: pl.DataFram
     pl.col('is_toxic_corridor').fill_null(0).cast(pl.Int8),
     pl.col('fraud_rate').fill_null(0.0).cast(pl.Float32).alias('corridor_risk_score'),
     ])
-
+  df = df.drop('fraud_rate')
+  
   # Use 500-row window (≈ 28 days based on typical transaction frequency)
   df = df.with_columns([
       pl.col('is_toxic_corridor')
