@@ -63,6 +63,19 @@ TRAIN_SAMPLE_SIZE = 1_500_000
 VAL_SAMPLE_SIZE = 500_000
 TEST_SAMPLE_SIZE = 750_000
 
+ZERO_IMPUTE_FEATURES = [
+    'burst_score_1h', 'burst_count_24h',
+    'txn_in_hour',
+    'toxic_corridor_count_28d', 'toxic_corridor_volume_28d',
+    'txn_count_28d', 'txn_count_total',
+    'total_amount_paid_28d', 'total_amount_received_28d',
+    'amount_paid_last_100',
+    'flag_high_burst', 'flag_large_gap',
+    'flag_extreme_consistency', 'flag_high_concentration',
+    'flag_heavy_structuring', 'anomaly_cascade_score',
+    'cascade_frequency_28d',
+]
+
 #setup
 def setup():
     """create output directories."""
@@ -94,7 +107,25 @@ def get_features(schema: dict) -> List[str]:
     if 'anomaly_score' not in features:
         logger.warning('No anomaly_score found in features')
     return features
+
+
+def remove_low_varience_features(X: np.ndarray, features: List[str], thresh: float=0.001) -> Tuple[np.ndarray, List[str]]:
+    """
+    remove features with near zero variance across the training set
+    a feature that barely changes across 1.5M rows contributes nothing to model
+    """
+    var = np.var(X, axis=0)
+    mask = var > thresh
     
+    k = [f for f, keep in zip(features, mask) if keep]
+    r = [f for f, keep in zip(features, mask) if not keep]
+
+    if r:
+        logger.warning(f"Removed {len(r)} low-variance features: {r}")
+    logger.info(f"kept {len(k)}/{len(features)} features after variance filter")
+
+    return X[:, mask], k
+
 
 # data loading
 def load_data(split: str, features: List[str], max_rows: int = None) -> Tuple[np.ndarray, np.ndarray]:
@@ -155,13 +186,17 @@ def load_data(split: str, features: List[str], max_rows: int = None) -> Tuple[np
     gc.collect()
 
     # processing one column at a time 
-    for col_idx in range(X.shape[1]):
+    for col_idx, col_name in enumerate(features):
         row_indices = np.where(np.isnan(X[:, col_idx]))[0]
-        if len(row_indices) > 0:
+        if len(row_indices) == 0:
+            continue
+        
+        if col_name in ZERO_IMPUTE_FEATURES:
+            X[row_indices, col_idx] = 0.0
+        else:
             col_mean= float(np.nanmean(X[:, col_idx]))
-            if np.isnan(col_mean):
-                col_mean = 0.0
-            X[row_indices, col_idx] = col_mean
+            X[row_indices, col_idx] = col_mean if not np.isnan(col_mean) else 0.0
+
 
     n_fraud= int(y.sum())
 
@@ -206,19 +241,29 @@ def calculate_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, float
         "threshold_1pct_fpr": float(thresholds[idx]) if idx < len(thresholds) else 1.0,
     }
 
-# def stratified_split(y: np.ndarray, train_frac: float, rng:np.random.RandomState) -> Tuple[np.ndarray, np.ndarray]:
-#     """
-#     sample positives and negatives independently at train_frac
-#     """
-#     pos = np.where(y==1)[0]
-#     neg = np.where(y==0)[0]
 
-#     train_pos = rng.choice(pos, max(int(train_frac * len(pos)), 1), replace=False)
-#     train_neg = rng.choice(neg, max(int(train_frac * len(neg)), 1), replace=False)
+def find_optimal_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
+    """
+    find the decision threshold that maximises recall subject to fpr <= business constraint.
+    this is the threshold save with the model without this the mode has no operational 
+    decision boundary"""
+    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+    valid_mask = fpr <= FPR_THRESHOLD
 
-#     train_idx = np.concatenate([train_pos, train_neg])
-#     val_idx = np.setdiff1d(np.arange(len(y)), train_idx)
-#     return train_idx, val_idx
+    if not valid_mask.any():
+        logger.warning('No threshold achieves FPR <= 1%. Defaulting to 0.5')
+        return 0.5
+
+    best_idx = np.argmax(tpr[valid_mask])
+    optimal_thresh = float(thresholds[valid_mask][best_idx])
+
+    logger.info(
+        f"Optimal Threshold: {optimal_thresh:.4f} |"
+        f"Recall: {tpr[valid_mask][best_idx]:.4f} |"
+        f"FPR: {fpr[valid_mask][best_idx]:.4f}"
+    )
+    return optimal_thresh
+
 
 def temporal_mccv_split(timestamps: np.ndarray, fold_i: int, n_folds: int=5,) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -466,6 +511,7 @@ def calibration_model(model, X_cal, y_cal):
     logger.info("Platt scaling calibrated model")
     return platt
 
+
 def calibrated_predict(model, platt, X):
     """
     predict probabilities using calibrated model.
@@ -544,39 +590,57 @@ def run_fusion(y_cal, probs_cal, anomaly_cal, y_eval, probs_eval, anomaly_eval) 
     logger.info(f"Fusion eval recall@1%FPR: {fusion_eval['recall_at_1pct_fpr']:.4f}")
     return fusion_eval
 
-
-def explain_model(model, X_sample, features, model_name):
-    """generate SHAP plots to understand what features matter."""
-    
+ 
+def explain_model(model,X_sample: np.ndarray,features: List[str],model_name: str) -> np.ndarray:
+    """
+    generate SHAP plots and return mean absolute shap values per feature.
+    ysed downstream for SHAP-based feature selection.
+    """
     logger.info(f"Creating SHAP plots for {model_name}...")
-    
+ 
     try:
         act_model = model.named_steps['clf'] if hasattr(model, 'named_steps') else model
         X_input = model.named_steps['scaler'].transform(X_sample) if hasattr(model, 'named_steps') else X_sample
+ 
         explainer = shap.TreeExplainer(act_model)
         shap_values = explainer.shap_values(X_input)
-        
-        # For models that return list, take the positive class
+ 
         if isinstance(shap_values, list):
             shap_values = shap_values[1]
-        
-        # Summary plot (dots)
-        shap.summary_plot(shap_values, X_sample, feature_names=features, show=False, max_display=20)
+ 
+        # summary plot (dots)
+        shap.summary_plot(shap_values, X_input, feature_names=features, show=False, max_display=20)
         plt.tight_layout()
         plt.savefig(SHAP_DIR / f"{model_name}_summary.png", dpi=150, bbox_inches="tight")
         plt.close()
-        
-        # Bar plot (importance)
-        shap.summary_plot(shap_values, X_sample, feature_names=features, show=False, max_display=20, plot_type="bar")
+ 
+        # bar plot (importance)
+        shap.summary_plot(shap_values, X_input, feature_names=features, show=False, max_display=20, plot_type="bar")
         plt.tight_layout()
         plt.savefig(SHAP_DIR / f"{model_name}_importance.png", dpi=150, bbox_inches="tight")
         plt.close()
-        
+ 
         logger.info(f"Saved SHAP plots to {SHAP_DIR}")
-        
+        return np.abs(shap_values).mean(axis=0)
+ 
     except Exception as e:
         logger.warning(f"SHAP failed: {e}")
-
+        return np.ones(len(features))
+ 
+ 
+def shap_feature_selection(mean_shap: np.ndarray,features: List[str],threshold: float = 0.001) -> List[str]:
+    """
+    drop features whose mean absolute SHAP value is below threshold
+    threshold=0.001 is conservative only removes truly zero-contribution features.
+    """
+    k = [f for f, s in zip(features, mean_shap) if s >= threshold]
+    r =[f for f, s in zip(features, mean_shap) if s < threshold]
+ 
+    if r:
+        logger.info(f"SHAP selection removed {len(r)} near zero features: {r}")
+    logger.info(f"SHAP selection kept {len(k)}/{len(features)} features")
+ 
+    return k
 
 
 def plot_thresholds(y_true, y_prob, model_name):
@@ -686,6 +750,18 @@ def main():
     X_train, y_train, train_timestamps = load_data('train', features, max_rows=TRAIN_SAMPLE_SIZE)
     X_val, y_val, _ = load_data("val", features, max_rows=VAL_SAMPLE_SIZE)
 
+    #remove low var features
+    variances = np.var(X_train, axis=0)
+    var_mask = variances > 0.001
+    removed = [f for f, keep in zip(features, var_mask) if not keep]
+    if removed:
+        logger.warning(f"Removed {len(removed)} low-var features: {removed}")
+
+    X_train = X_train[:, var_mask]
+    X_val = X_val[:, var_mask]
+    features = [f for f, keep in zip(features, var_mask) if keep]
+    logger.info(f"Kept {len(features)} features after variance filter")
+
     n_fraud = int(y_train.sum())
     imbalance_ratio = (len(y_train) - n_fraud) / max(n_fraud, 1)
     logger.info(f"Class imbalance: 1:{imbalance_ratio:.0f}")
@@ -745,6 +821,9 @@ def main():
     # calibration on validation data — not test data — to keep test fully clean
     cal_error = check_calibration(y_eval, probs_eval, best_name)
 
+    #optimal threshold
+    optimal_threshold = find_optimal_threshold(y_eval, probs_eval)
+
     for r in all_results:
         if r["name"] == best_name:
             r["val_metrics"] = val_metrics
@@ -779,7 +858,13 @@ def main():
                 f"PR-AUC: {test_metrics['pr_auc']:.4f}")
 
     # Explainability on a test sample
-    explain_model(final_model, X_test[:1000], features, best_name)
+    mean_shap = explain_model(final_model, X_test[:1000], features, best_name)
+    shap_kept = shap_feature_selection(mean_shap, features, threshold=0.001)
+    if len(shap_kept) < len(features):
+        logger.info(
+            f"SHAP suggests {len(features)- len(shap_kept)} features can be dropped"
+            f"in the next pipeline run. See logs above for features names"
+        )
     del X_test
     gc.collect()
 
@@ -791,6 +876,8 @@ def main():
             "model":final_model,
             "platt": platt,
             "features": features,
+            "optimal_threshold": optimal_threshold,
+            "shap_kept_features": shap_kept,
             "imbalance_ratio": imbalance_ratio,
             "mccv_results": best_mccv,
             "val_metrics": val_metrics,
