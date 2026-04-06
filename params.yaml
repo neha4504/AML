@@ -1,0 +1,4 @@
+feature_engineering:
+  transactions_path: data/raw/HI-Medium_Trans.csv
+  accounts_path: data/raw/HI-Medium_accounts.csv
+  output_dir: aml_features

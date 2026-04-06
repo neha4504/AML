@@ -94,3 +94,9 @@ ecvenv
 notebooks/aml_features/
 aml_features/
 cred.txt/
+
+# ML / Project artifacts
+venv/
+models/
+*.pkl
+*.joblib

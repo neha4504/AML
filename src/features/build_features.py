@@ -25,6 +25,7 @@ from typing import Optional, Tuple, Dict
 import polars as pl
 import warnings
 import gc
+import yaml
 warnings.filterwarnings('ignore')
 
 # Import feature modules
@@ -478,21 +479,30 @@ def build_all_features(
    
     return train_path, val_path, test_path
 
+def load_params(path="params.yaml"):
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
+
 if __name__ == '__main__':
     import sys
-    
+
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
-    # Default paths (adjust as needed)
-    trans_path = Path('data/raw/HI-Medium_Trans.csv')
-    acc_path = Path('data/raw/HI-Medium_accounts.csv')
-    output_path = Path('aml_features')
-    
+
+    # Load params
+    params = load_params()
+    fe_params = params.get("feature_engineering", {})
+
+    # Replace hardcoded paths
+    trans_path = Path(fe_params.get("transactions_path"))
+    acc_path = Path(fe_params.get("accounts_path"))
+    output_path = Path(fe_params.get("output_dir", "aml_features"))
+
+    # safety check
     if not trans_path.exists() or not acc_path.exists():
         logger.error(f"Data files not found at {trans_path} or {acc_path}")
         sys.exit(1)
-    
+
     build_all_features(trans_path, acc_path, output_path)
