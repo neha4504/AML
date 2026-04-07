@@ -1,0 +1,103 @@
+stages:
+
+  data_ingestion:
+    cmd: python src/data/data_ingestion.py
+    deps:
+      - src/data/data_ingestion.py
+      - src/connections/s3_connection.py
+      - params.yaml
+    params:
+      - data_ingestion
+    outs:
+      - data/raw/transactions_raw.parquet
+      - data/raw/accounts_raw.parquet
+
+  data_preprocessing:
+    cmd: python src/data/data_preprocessing.py
+    deps:
+      - src/data/data_preprocessing.py
+      - data/raw/transactions_raw.parquet
+      - data/raw/accounts_raw.parquet
+      - params.yaml
+    params:
+      - data_preprocessing
+    outs:
+      - data/processed/transactions_processed.parquet
+      - data/processed/accounts_processed.parquet
+
+  feature_engineering:
+    cmd: python src/features/feature_engineering.py
+    deps:
+      - src/features/feature_engineering.py
+      - src/features/build_features.py
+      - src/features/experimental/base_features.py
+      - src/features/experimental/rolling_features_v2.py
+      - src/features/experimental/advanced_rolling_features_v2.py
+      - src/features/experimental/counterparty_entropy_features_v2.py
+      - src/features/experimental/network_features.py
+      - src/features/experimental/toxic_corridors.py
+      - src/features/experimental/ratio_features.py
+      - src/features/experimental/derived_features.py
+      - src/features/experimental/precompute_entity_stats.py
+      - data/processed/transactions_clean.parquet
+      - data/processed/accounts_clean.parquet
+      - params.yaml
+    params:
+      - feature_engineering
+    outs:
+      - data/features/train_features.parquet
+      - data/features/val_features.parquet
+      - data/features/test_features.parquet
+
+  model_building:
+    cmd: python src/model/model_building.py
+    deps:
+      - src/model/model_building.py
+      - data/features/train_features.parquet
+      - data/features/val_features.parquet
+      - data/features/test_features.parquet
+      - params.yaml
+    params:
+      - model
+    outs:
+      - models/supervised/LightGBM.pkl:
+          cache: true
+      - models/supervised/shap/
+    metrics:
+      - reports/metrics.json:
+          cache: false
+
+  model_evaluation:
+    cmd: python src/model/model_evaluation.py
+    deps:
+      - src/model/model_evaluation.py
+      - data/features/test_features.parquet
+      - params.yaml
+    params:
+      - model
+      - dagshub
+      - mlflow
+    outs:
+      - reports/experiment_info.json:
+          cache: false
+      - reports/confusion_matrix.png:
+          cache: false
+      - reports/pr_curve.png:
+          cache: false
+    metrics:
+      - reports/metrics.json:
+          cache: false
+
+  model_registry:
+    cmd: python src/model/model_registry.py
+    deps:
+      - src/model/model_registry.py
+      - reports/experiment_info.json
+      - reports/metrics.json
+      - params.yaml
+    params:
+      - model_registry
+      - dagshub
+    outs:
+      - reports/registry_output.json:
+          cache: false
