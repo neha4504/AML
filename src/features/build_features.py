@@ -2,11 +2,11 @@
 Integrated AML Feature Engineering Pipeline
 
 This module orchestrates the complete feature engineering pipeline:
-1. Base features (temporal, benford, lifecycle)
-2. Advanced rolling features (burst, time-gaps, velocity)
-3. Counterparty entropy and network metrics
-4. Unsupervised anomaly detection (Isolation Forest)
-5. Feature validation and output
+1. base features (temporal, benford, lifecycle)
+2. advanced rolling features (burst, time-gaps, velocity)
+3. counterparty entropy and network metrics
+4. unsupervised anomaly detection (Isolation Forest)
+5. feature validation and output
 
 Usage:
     from src.features.build_features import build_all_features
@@ -55,6 +55,38 @@ def optimize_dtypes(df: pl.LazyFrame) -> pl.LazyFrame:
         pl.col('Amount Received').cast(pl.Float32)
     ])
 
+
+def derive_categorical_encode(train_df: pl.LazyFrame) -> dict:
+    """
+    precalculate target and frequency encoding using only training data
+    """
+    logger.info("Deriving categorical encoding from Training data onlu....")
+    encodings = {}
+
+    #target encoding col
+    target_cols = ['Payment Format', 'Receiving Currency', 'Payment Currency']
+    global_mean = train_df.select(pl.col('Is Laundering').mean()).collect().item()
+
+    for col in target_cols:
+        mapping = (
+            train_df.group_by(col).agg(
+                pl.col('Is Laundering').mean().alias(f'{col}_target_enc')).collect()
+            )
+        encodings[col] = {'mapping': mapping, 'type': 'target', 'fallback': global_mean}
+        logger.info(f" Computed target encoding for '{col}' ({len(mapping)} categories)")
+    
+    #freq encoding cols
+    freq_cols = ['From Bank', 'To Bank']
+    for col in freq_cols:
+        mapping = (
+            train_df.group_by(col).agg(pl.len().alias(f"{col}_freq_enc")).collect()
+        )
+        encodings[col] = {'mapping': mapping, 'type': 'frequency', 'fallback':0 }
+        logger.info(f" Computed Frequency encoding for '{col}' ({len(mapping)} categoies)")
+
+    return encodings
+
+
 import shutil
 def process_spilts_in_batches(
     df: pl.LazyFrame,
@@ -63,7 +95,8 @@ def process_spilts_in_batches(
     output_dir: Path, 
     batch_size: int = 10000,
     toxic_corridors=None,
-    train_df: pl.LazyFrame = None
+    train_df: pl.LazyFrame = None,
+    encodings: dict = None
 ) -> Path:
 
     logger.info(f"BATCH PROCESSING: {split_name.upper()}")
@@ -149,6 +182,20 @@ def process_spilts_in_batches(
         logger.info("   Step 8: Toxic corridor features...")
         df_batch = apply_toxic_corridor_features(df_batch, toxic_corridors=toxic_corridors)
         
+        # 9. categorical encodings (target and frequency)
+        if encodings:
+            logger.info("   Step 9: Applying categorical encodings...")
+            for col, config in encodings.items():
+                if col in df_batch.columns:
+                    mapping_df = config['mapping'].lazy()
+                    new_col_name = list(mapping_df.columns)[-1]
+
+                    #join mapping
+                    df_batch = df_batch.join(mapping_df, on=col, how='left')
+                    #fill unseen categories with fallback, drop original strings
+                    df_batch = df_batch.with_columns(pl.col(new_col_name).fill_null(config['fallback']))
+                    df_batch = df_batch.drop(col)
+    
         #drop train history 
         if split_name in ('val', 'test') and train_df is not None:
             df_batch = df_batch.filter(pl.col('__split__') != '__history__').drop('__split__')
@@ -190,19 +237,19 @@ def build_training_features(
     test_df: pl.LazyFrame,
     accounts: Optional[pl.DataFrame] = None,
     output_dir: Path = Path('./aml_features'),
-    toxic_corridors=None
+    toxic_corridors=None,
+    encodings: dict = None,
 ) -> Tuple[Path, Path, Path]:
 
     """
-    Build all features for training, validation, and test sets.
-    Processes splits sequentially to manage memory.
+    build all features for training, validation, and test sets.
+    processes splits sequentially to manage memory.
     
     Args:
         train_df, val_df, test_df: Lazy DataFrames by split
         accounts: Accounts reference data
-    
     Returns:
-        Tuple of (train_features, val_features, test_features) as eager DataFrames
+        tuple of (train_features, val_features, test_features) as eager DataFrames
     """
     logger.info("="*70)
     logger.info("BUILDING AML FEATURES")
@@ -242,7 +289,8 @@ def build_training_features(
             entity_stats_lazy=entity_stats_lazy,
             output_dir=output_dir,
             batch_size=15000,
-            toxic_corridors=toxic_corridors
+            toxic_corridors=toxic_corridors,
+            encodings=encodings
         )
         processed_splits[split_name] = output_path
         logger.info(f"\n{split_name.upper()} split complete")
@@ -271,12 +319,6 @@ def build_training_features(
 def validate_features(file_path: Path) -> Dict:
     """
     Validate feature engineering output.
-    
-    Checks:
-    - No NaNs in critical features
-    - Feature distribution reasonableness
-    - Class balance
-    - Feature diversity
     """
     logger.info(f"Validating feature quality for {file_path.name}...")
     
@@ -323,25 +365,25 @@ def create_temporal_splits(
     trans: pl.LazyFrame,
 ) -> Tuple[pl.LazyFrame, pl.LazyFrame, pl.LazyFrame]:
     """
-    Splits transactions chronologically using only dense days (1-16).
+    splits transactions chronologically using only dense days (1-16).
 
-    Why days 1-16 only:
-        The IBM HI-Medium dataset has a hard cliff after day 16.
-        Days 17-28 contain ~11,000 rows total vs ~2M+ per day in
+    why days 1-16 only:
+        the IBM HI-Medium dataset has a hard cliff after day 16.
+        days 17-28 contain ~11,000 rows total vs ~2M+ per day in
         the dense window. Using sparse days as test produces a 60%
         fraud rate and 882 rows — statistically meaningless for
         any evaluation metric.
 
-    Why sparse tail goes into train:
-        Those ~848 fraud cases in days 17-28 are real signal.
-        They should contribute to model learning, not contaminate
+    why sparse tail goes into train:
+        those 848 fraud cases in days 17-28 are real signal.
+        they should contribute to model learning, not contaminate
         evaluation. Folding them into train preserves the signal
         without distorting metrics.
 
     Split:
-        Train  : days 1-11  + sparse tail (days 17-28)
-        Val    : days 12-13
-        Test   : days 14-16
+        Train: days 1-11  + sparse tail (days 17-28)
+        Val: days 12-13
+        Test : days 14-16
     """
     dense_train = trans.filter(
         pl.col("Timestamp").dt.day() <= 11
@@ -464,11 +506,29 @@ def build_all_features(
     threshold=0.02
 )
 
+    encodings = derive_categorical_encode(train_df)
+
     # Build features
     train_path, val_path, test_path = build_training_features(
-        train_df, val_df, test_df, accounts, output_dir, toxic_corridors=toxic_corridors
+        train_df, val_df, test_df, accounts, output_dir, toxic_corridors=toxic_corridors, encodings=encodings
     )
     
+    logger.info('Post-processing: Applying freq encoding to derived corridor feature...')
+    train_freq_corr = (
+        pl.scan_parquet(train_path).select('corridor').group_by('corridor').agg(pl.len()
+        .alias('corridor_freq_enc')).collect()
+    )
+    for p in [train_path, val_path, test_path]:
+        temp_p = p.with_suffix('.tmp.parquet')
+        (pl.scan_parquet(p).join(train_freq_corr.lazy(), on='corridor', how='left')
+        .with_columns(pl.col('corridor_freq_enc').fill_null(0))
+        .drop('corridor')
+        .sink_parquet(temp_p)
+        )
+        p.unlink()
+        temp_p.rename(p)
+
+
     # Validate
     validate_features(train_path)
    
