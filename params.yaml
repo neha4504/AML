@@ -1,6 +1,6 @@
 data_ingestion:
-  trans_local_path: "data/raw/HI-Medium_Trans.csv"
-  acc_local_path: "data/raw/HI-Medium_accounts.csv"
+  trans_local_path: "dvc_data/raw/HI-Medium_Trans.parquet"
+  acc_local_path: "dvc_data/raw/HI-Medium_accounts.parquet"
   
   # S3 config — credentials loaded from .env
   s3_bucket: "your-aml-bucket-name"
@@ -28,7 +28,7 @@ feature_engineering:
   toxic_corridor_min_txns: 100
 
 
-anomaly_scoring:
+anomaly:
   train_sample_size: 2500000
   chunk_size: 100000
   contamination: "auto"
@@ -46,7 +46,7 @@ model:
   shap_threshold: 0.001
 
 model_registry:
-  reg_model_name: "aml detector"
+  reg_model_name: "AML_Laundering_Detector"
   dataset_name: "IBM_HI_Medium"
   min_improvement: 0.005
 
@@ -59,9 +59,10 @@ mlflow:
 
   
 storage:
-  features_dir: "aml_features"
-  raw_data_dir: "data/raw"
-  processed_dir: "data/processed"
-  anomaly_dir: "data/processed_with_anomaly"
-  model_dir: "models/supervised"
-  reports_dir: "reporsts"
+  features_dir: "dvc_data/aml_features/"
+  raw_data_dir: "dvc_data/raw"
+  processed_dir: "dvc_data/processed"
+  anomaly_dir: "dvc_data/processed_with_anomaly"
+  model_dir: "models/anomaly/"
+  model_build_dir: "models/trained_model/"
+  reports_dir: "reports"

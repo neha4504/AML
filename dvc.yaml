@@ -1,5 +1,6 @@
 stages:
 
+  #stage 1- data ingestion
   data_ingestion:
     cmd: python src/data/data_ingestion.py
     deps:
@@ -9,22 +10,24 @@ stages:
     params:
       - data_ingestion
     outs:
-      - data/raw/transactions_raw.parquet
-      - data/raw/accounts_raw.parquet
+      - dvc_data/raw/transactions_raw.parquet
+      - dvc_data/raw/accounts_raw.parquet
 
+  #stage 2 - data preprocessing
   data_preprocessing:
     cmd: python src/data/data_preprocessing.py
     deps:
       - src/data/data_preprocessing.py
-      - data/raw/transactions_raw.parquet
-      - data/raw/accounts_raw.parquet
+      - dvc_data/raw/transactions_raw.parquet
+      - dvc_data/raw/accounts_raw.parquet
       - params.yaml
     params:
       - data_preprocessing
     outs:
-      - data/processed/transactions_processed.parquet
-      - data/processed/accounts_processed.parquet
+      - dvc_data/processed/transactions_processed.parquet
+      - dvc_data/processed/accounts_processed.parquet
 
+  #stage 3 - feature engineering
   feature_engineering:
     cmd: python src/features/feature_engineering.py
     deps:
@@ -39,39 +42,58 @@ stages:
       - src/features/experimental/ratio_features.py
       - src/features/experimental/derived_features.py
       - src/features/experimental/precompute_entity_stats.py
-      - data/processed/transactions_clean.parquet
-      - data/processed/accounts_clean.parquet
+      - dvc_data/processed/transactions_processed.parquet
+      - dvc_data/processed/accounts_processed.parquet
       - params.yaml
     params:
       - feature_engineering
     outs:
-      - data/features/train_features.parquet
-      - data/features/val_features.parquet
-      - data/features/test_features.parquet
+      - dvc_data/aml_features/train_features.parquet
+      - dvc_data/aml_features/val_features.parquet
+      - dvc_data/aml_features/test_features.parquet
 
+  #stage 3.5 - anomaly scoring
+  anomaly_scoring:
+    cmd: python src/features/anomaly_feature_scoring.py
+    deps:
+      - src/features/anomaly_feature_scoring.py
+      - dvc_data/aml_features/train_features.parquet
+      - dvc_data/aml_features/val_features.parquet
+      - dvc_data/aml_features/test_features.parquet
+      - params.yaml
+    params:
+      - anomaly
+    outs:
+      - dvc_data/processed_with_anomaly/train_features.parquet
+      - dvc_data/processed_with_anomaly/val_features.parquet
+      - dvc_data/processed_with_anomaly/test_features.parquet
+      - models/anomaly/isolation_forest.pkl:
+          cache: true
+
+  #stage 4 - model buildling
   model_building:
     cmd: python src/model/model_building.py
     deps:
       - src/model/model_building.py
-      - data/features/train_features.parquet
-      - data/features/val_features.parquet
-      - data/features/test_features.parquet
+      - dvc_data/processed_with_anomaly/train_features.parquet
+      - dvc_data/processed_with_anomaly/val_features.parquet
+      - dvc_data/processed_with_anomaly/test_features.parquet
       - params.yaml
     params:
       - model
     outs:
-      - models/supervised/LightGBM.pkl:
+      - models/trained_model/:
           cache: true
-      - models/supervised/shap/
     metrics:
-      - reports/metrics.json:
+      - reports/model_metrics.json:
           cache: false
 
+  #stage 5 - model evaluation
   model_evaluation:
     cmd: python src/model/model_evaluation.py
     deps:
       - src/model/model_evaluation.py
-      - data/features/test_features.parquet
+      - dvc_data/processed_with_anomaly/test_features.parquet
       - params.yaml
     params:
       - model
@@ -85,9 +107,10 @@ stages:
       - reports/pr_curve.png:
           cache: false
     metrics:
-      - reports/metrics.json:
+      - reports/eval_metrics.json:
           cache: false
 
+  #stage 6 - model registry
   model_registry:
     cmd: python src/model/model_registry.py
     deps:
