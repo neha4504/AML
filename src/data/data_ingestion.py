@@ -93,7 +93,7 @@ def save_raw_data(transactions: pl.DataFrame, accounts: pl.DataFrame, params: di
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     trans_path = raw_dir / 'transactions_raw.parquet'
-    acc_path = raw_dir / 'accounts_raw.parquest'
+    acc_path = raw_dir / 'accounts_raw.parquet'
 
     transactions.write_parquet(trans_path, compression='snappy')
     accounts.write_parquet(acc_path, compression='snappy')
@@ -118,8 +118,6 @@ def main():
 
         logger.info('=' * 60)
         logger.info('Data Ingestion Complete')
-        logger.info(f'Transactions -> {trans_path}')
-        logger.info(f"Accounts -> {acc_path}")
         logger.info('='* 60)
 
     except Exception as e:
