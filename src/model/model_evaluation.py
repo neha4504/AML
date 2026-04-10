@@ -188,7 +188,7 @@ def plot_confusion_matrix(
     plt.ylabel("Actual")
     plt.xlabel("Predicted")
     plt.tight_layout()
-    plt.savefig(reports_dir / f"{model_name}_confusion_matrix.png", dpi=150)
+    plt.savefig(reports_dir / f"confusion_matrix.png", dpi=150)
     plt.close()
     logger.info("Confusion matrix saved")
  
@@ -212,7 +212,7 @@ def plot_pr_curve(y_true: np.ndarray,y_prob: np.ndarray,model_name: str,reports_
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(reports_dir / f"{model_name}_pr_curve.png", dpi=150)
+    plt.savefig(reports_dir / f"pr_curve.png", dpi=150)
     plt.close()
     logger.info("PR curve saved")
  
@@ -332,9 +332,9 @@ def main():
         time_col= params["data_ingestion"].get("timestamp_col", "Timestamp")
         fpr_threshold = model_cfg.get("fpr_threshold", 0.01)
  
-        model_dir= Path(params["storage"]["model_dir"])
-        features_dir = Path(params["storage"]["features_dir"])
-        reports_dir= Path(params["storage"].get("reports_dir", "reports"))
+        model_dir= Path(params["storage"]["model_build_dir"])
+        features_dir = Path(params["storage"]["anomaly_dir"])
+        reports_dir= Path(params["storage"]["reports_dir"])
         shap_dir= model_dir / "shap"
         reports_dir.mkdir(parents=True, exist_ok=True)
  
@@ -374,12 +374,18 @@ def main():
         plot_confusion_matrix(y_test, test_probs, threshold, model_name, reports_dir)
         plot_pr_curve(y_test, test_probs, model_name, reports_dir)
  
-        del X_test
-        gc.collect()
- 
         #save metrics.json for DVC
         import json
-        metrics_path = reports_dir / "metrics.json"
+        metrics_path = reports_dir / "eval_metrics.json"
+        
+        from src.model.explainability import AMLExplainer
+    
+        explainer = AMLExplainer(model=artifact['model'], feature_names=features)
+        explainer.get_global_importance(X_test[:1000], save_dir=str(shap_dir))
+
+        del X_test
+        gc.collect()
+
         with open(metrics_path, "w") as f:
             json.dump({k: v for k, v in test_metrics.items() if isinstance(v, (int, float))}, f, indent=4)
         logger.info(f"Metrics saved -> {metrics_path}")
