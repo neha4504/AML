@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 import numpy as np
 import polars as pl
 import mlflow
+import mlflow.pyfunc
+import mlflow.xgboost
+import mlflow.lightgbm
+import mlflow.sklearn
 import dagshub
 from sklearn.metrics import (
     roc_auc_score, roc_curve, precision_recall_curve, auc,
@@ -59,7 +63,7 @@ def load_model_artifact(model_dir: Path) -> dict:
     
     logger.info(f"Model loaded: {artifact['best_model_name']}")
     logger.info(f"Features: {len(artifact['features'])}")
-    logger.info(f'Optimal Theshold: {artifact['optimal_threshold']:.4f}')
+    logger.info(f"Optimal Theshold: {artifact['optimal_threshold']:.4f}")
 
     return artifact, model_path
 
@@ -305,8 +309,28 @@ def log_to_mlflow(
         })
  
         # model artifact
-        mlflow.log_artifact(str(model_path), artifact_path="model")
- 
+        model_instance = artifact["model"]
+        model_class = type(model_instance).__name__.lower()
+        model_module = type(model_instance).__module__.lower()
+
+        if "lgbmclassifier" in model_class or "lgbmregressor" in model_class:
+            
+            mlflow.sklearn.log_model(sk_model=model_instance, artifact_path="model")
+            logger.info("Logged LGBMClassifier using sklearn flavor ✓")
+
+        elif "booster" in model_class and "lightgbm" in model_module:
+            
+            mlflow.lightgbm.log_model(lgb_model=model_instance, artifact_path="model")
+            logger.info("Logged native using lightgbm flavor")
+
+        elif "xgboost" in model_module:
+            mlflow.xgboost.log_model(xgb_model=model_instance, artifact_path="model")
+            logger.info("Logged using xgboost flavor")
+
+        else:
+            mlflow.sklearn.log_model(sk_model=model_instance, artifact_path="model")
+            logger.warning(f"Unknown type '{model_class}' — fell back to sklearn flavor")
+
         # plots
         for plot_dir in [reports_dir, shap_dir]:
             if plot_dir.exists():
@@ -337,7 +361,8 @@ def main():
         reports_dir= Path(params["storage"]["reports_dir"])
         shap_dir= model_dir / "shap"
         reports_dir.mkdir(parents=True, exist_ok=True)
- 
+        shap_dir.mkdir(parents=True, exist_ok=True)
+
         #load model 
         artifact, model_path = load_model_artifact(model_dir)
         model_name= artifact["best_model_name"]
