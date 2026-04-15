@@ -165,7 +165,6 @@ def register_model(
     logger.info(f"Registering model '{registered_model_name}'...")
     
     model_uri = f"runs:/{run_id}/model"
-    logger.info("Waiting for dagshub artifact indexing..")
     try:
         client.create_registered_model(registered_model_name)
     except Exception:
@@ -178,7 +177,6 @@ def register_model(
     
 
     logger.info(f"Registered: {registered_model_name} v{model_version.version}")
-    return model_version.version
     
     #tag with full metric audit trail
     tags = {

@@ -240,6 +240,7 @@ def setup_mlflow(params: dict) -> None:
     tracking_uri = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
  
     mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_tracking_uri("mlruns")
     mlflow.set_experiment(params["mlflow"]["experiment_name"])
  
     logger.info(f"MLflow tracking URI: {tracking_uri}")
