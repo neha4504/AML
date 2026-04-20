@@ -95,9 +95,10 @@ notebooks/aml_features/
 aml_features/
 cred.txt/
 local_s3/
-dvc_data/
 models/
 reports/
 mlruns/
 cred.txt/
 test.ipynb
+dvc_data/processed/
+dvc_data/processed_with_anomaly
