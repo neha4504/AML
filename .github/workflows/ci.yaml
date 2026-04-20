@@ -31,6 +31,15 @@ jobs:
           pip install -r requirements-test.txt
      
 
+      - name: Configure DVC credentials
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.AML_TEST }}
+        run: |
+          dvc remote modify myremote auth basic
+          dvc remote modify myremote user virajdeshmukh080818
+          dvc remote modify myremote password $DAGSHUB_TOKEN
+      
+      
       - name: Pull DVC data
         run: dvc pull
 

@@ -2,3 +2,6 @@
     remote = myremote
 ['remote "myremote"']
     url = https://dagshub.com/virajdeshmukh080818/AML.dvc
+    auth = basic
+    user = virajdeshmukh080818
+    password = 759381ae86700d934cfc08a3f6dbbd78a2b00a2e
