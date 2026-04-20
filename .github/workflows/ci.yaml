@@ -36,7 +36,7 @@ jobs:
           dvc remote modify myremote user virajdeshmukh080818
           dvc remote modify myremote password $DAGSHUB_TOKEN
           # Download the actual .pkl files into the GitHub runner
-          dvc pull
+          dvc repro
         
 
       - name: Run Model Tests
