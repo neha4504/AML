@@ -19,6 +19,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+      
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
 
       
       - name: Install DVC
@@ -39,7 +42,7 @@ jobs:
       - name: Run Model Tests
         env:
           DAGSHUB_TOKEN: ${{ secrets.AML_TEST }}
-        run: pytest tests/test_model.py
+        run: python -m pytest tests/test_model.py
 
       
       - name: Promote Model to Production
@@ -53,7 +56,7 @@ jobs:
         
       - name: Run FastAPI App tests
         if: success()
-        run: pytest tests/test_app.py
+        run: python -m pytest tests/test_app.py
 
 
       # ================= DEPLOYMENT STEPS =================
