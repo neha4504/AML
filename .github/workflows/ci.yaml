@@ -44,6 +44,7 @@ jobs:
       - name: Pull DVC data
         run: dvc pull
 
+
       - name: Run Pipeline
         env:
           DAGSHUB_TOKEN: ${{ secrets.AML_TEST }}
@@ -55,7 +56,8 @@ jobs:
           dvc remote modify myremote password $DAGSHUB_TOKEN
           # Download the actual .pkl files into the GitHub runner
           dvc repro
-        
+          dvc push
+
 
       - name: Run Model Tests
         env:

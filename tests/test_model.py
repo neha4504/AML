@@ -27,7 +27,7 @@ class TestAMLModelLoading(unittest.TestCase):
             raise ValueError("No model found in mlflow registry to test")
 
         cls.new_model_uri = f"models:/{cls.model_name}/{cls.new_model_version}"
-        cls.new_model = mlflow.pyfunc.load_model(cls.new_model_uri)
+        cls.new_model = mlflow.sklearn.load_model(cls.new_model_uri)
 
         cls.feature_names = [
             'Amount Received', 'Amount Paid', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'is_round_100', 
@@ -56,27 +56,40 @@ class TestAMLModelLoading(unittest.TestCase):
         
         cls.holdout_data = pl.read_csv('data/test/test_data.csv')
 
-    
+        try:
+            client = mlflow.MlflowClient()
+            prod_version = client.get_model_version_by_alias(cls.model_name, "production")
+            cls.prod_model = mlflow.sklearn.load_model(
+                f"models:/{cls.model_name}/{prod_version.version}"
+            )
+        except Exception:
+            cls.prod_model = None
+
+
     @staticmethod
-    def get_latest_model_version(model_name, stage="None"):
+    def get_latest_model_version(model_name):
         client = mlflow.MlflowClient()
-        latest_version = client.get_model_version_by_alias(model_name, "staging")
-        return latest_version.version if latest_version else None
+        try:
+            latest_version = client.get_model_version_by_alias(model_name, "staging")
+            return latest_version.version if latest_version else None
+        except Exception:
+            return None
 
     def test_model_load(self):
-        self.assertIsNone(self.new_model)
+        self.assertIsNotNone(self.new_model)
     
     def test_model_signature(self):
-        dummy_input = pl.DataFrame([[0.0] * len(self.feature_names)], columns=self.feature_names)
+        dummy_input = pl.DataFrame({f: [0.0] for f in self.feature_names})
 
         #predictusing new model
-        pred = self.new_model.predict(dummy_input)
+        pred = self.new_model.predict(dummy_input.to_numpy())
         self.assertEqual(len(pred), 1)
-        self.assertIn(pred[0], [0,1])
+        self.assertIn(int(pred[0]), [0,1])
 
     def test_model_performance(self):
-        x_holdout = self.holdout_data[self.feature_names]
-        y_holdout = self.holdout_data['Is Laundering']
+        x_holdout = self.holdout_data[self.feature_names].to_numpy()
+        y_holdout = self.holdout_data['Is Laundering'].to_numpy()
+
         y_probs_new = self.new_model.predict_proba(x_holdout)[:, 1]
 
         optimal_threshold = 0.1621619
@@ -105,4 +118,7 @@ class TestAMLModelLoading(unittest.TestCase):
             self.assertGreaterEqual(recall_new, 0.70, 'First model recall is critically low')
             self.assertGreaterEqual(f1_new, 0.55, 'First model f1 is critically low')
 
-            
+
+
+if __name__ == "__main__":
+    unittest.main()
