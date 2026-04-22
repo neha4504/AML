@@ -1,9 +1,9 @@
 import unittest
 import mlflow
-import mlflow.lightgbm
 import os
+import tempfile
+import pickle
 import polars as pl
-import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 
@@ -28,7 +28,20 @@ class TestAMLModelLoading(unittest.TestCase):
             raise ValueError("No model found in mlflow registry to test")
 
         cls.new_model_uri = f"models:/{cls.model_name}/{cls.new_model_version}"
-        cls.new_model = mlflow.lightgbm.load_model(cls.new_model_uri)
+        client = mlflow.MlflowClient()
+        version_obj = client.get_model_version_by_alias(cls.model_name, "staging")
+        run_id = version_obj.run_id
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = mlflow.artifacts.download_artifacts(
+                run_id=run_id,
+                artifact_path="model/model.pkl",
+                dst_path=tmpdir
+            )
+            with open(path, "rb") as f:
+                cls.new_model = pickle.load(f)
+        
+        print(f"Model loaded: {type(cls.new_model)}")
 
         cls.feature_names = [
             'Amount Received', 'Amount Paid', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'is_round_100', 

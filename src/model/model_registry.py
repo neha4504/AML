@@ -175,9 +175,16 @@ def register_model(
     with open(model_path, "rb") as x:
         model = pickle.load(x)
     
+    import tempfile
     with mlflow.start_run(run_id=run_id):
-        mlflow.lightgbm.log_model(model['model'], "model")
-    logger.info("Model artifact logged")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = os.path.join(tmpdir, "model.pkl")
+            with open(model_path, "wb") as f:
+                pickle.dump(model['model'], f)
+            mlflow.log_artifact(model_path, artifact_path="model")
+    
+    logger.info("Model artifact uploaded to Dagshub")
+    
     
     model_uri = f"runs:/{run_id}/model"
     try:
