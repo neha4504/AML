@@ -40,7 +40,15 @@ jobs:
           dvc remote modify myremote user virajdeshmukh080818
           dvc remote modify myremote password $DAGSHUB_TOKEN
       
-      
+      - name: Cache DVC cache
+        uses: actions/cache@v4
+        with:
+          path: .dvc/cache
+          key: ${{ runner.os }}-dvc-${{ hashFiles('dvc.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dvc-
+
+
       - name: Pull DVC data
         run: dvc pull
 
