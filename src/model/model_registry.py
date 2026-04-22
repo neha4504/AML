@@ -1,14 +1,13 @@
 import os
 import json
 import pickle
-from re import M
 import yaml
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
 import mlflow
-import mlflow.xgboost
+import mlflow.lightgbm
 import mlflow.sklearn
 from mlflow import MlflowClient
 
@@ -177,7 +176,7 @@ def register_model(
         model = pickle.load(x)
     
     with mlflow.start_run(run_id=run_id):
-        mlflow.sklearn.log_model(model, "model")
+        mlflow.lightgbm.log_model(model['model'], "model")
     logger.info("Model artifact logged")
     
     model_uri = f"runs:/{run_id}/model"

@@ -1,5 +1,6 @@
 import unittest
 import mlflow
+import mlflow.lightgbm
 import os
 import polars as pl
 import numpy as np
@@ -27,7 +28,7 @@ class TestAMLModelLoading(unittest.TestCase):
             raise ValueError("No model found in mlflow registry to test")
 
         cls.new_model_uri = f"models:/{cls.model_name}/{cls.new_model_version}"
-        cls.new_model = mlflow.sklearn.load_model(cls.new_model_uri)
+        cls.new_model = mlflow.lightgbm.load_model(cls.new_model_uri)
 
         cls.feature_names = [
             'Amount Received', 'Amount Paid', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'is_round_100', 
