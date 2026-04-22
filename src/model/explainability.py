@@ -4,6 +4,8 @@ import polars as pl
 import matplotlib.pyplot as plt
 from typing import List, Dict, Any
 import logging
+import xgboost as xgb
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +15,19 @@ class AMLExplainer:
         self.model = model
         self.feature_names = feature_names
 
+        try:
+        
+            target_model = model.named_steps['clf'] if hasattr(model, 'named_steps') and 'clf' in model.named_steps else model
+            if isinstance(target_model, xgb.XGBClassifier):
+                booster = target_model.get_booster()
+                config_dict = json.loads(booster.save_config())
+                base_score = config_dict['learner']['learner_model_param']['base_score']
+                if isinstance(base_score, str) and '[' in base_score:
+                    booster.set_param({'base_score': float(base_score.strip('[]'))})
+                    logger.info("Fixed XGBoost base_score format for SHAP compatibility")
+        except Exception as e:
+            logger.warning(f"base_score fix skipped: {e}")
+        
         if hasattr(model, 'named_steps') and 'clf' in model.named_steps:
             self.explainer = shap.TreeExplainer(model.named_steps['clf'])
         else:
