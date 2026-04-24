@@ -29,7 +29,9 @@ jobs:
       - name: Cache DVC outputs
         uses: actions/cache@v4
         with:
-          path: .dvc/cache
+          path: |
+             .dvc/cache
+             dvc_data/
           key: ${{ runner.os }}-dvc-${{ hashFiles('dvc.lock') }}
           restore-keys: |
             ${{ runner.os }}-dvc-
