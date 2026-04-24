@@ -144,10 +144,10 @@ def main():
     try:
         params = load_params('params.yaml')
         #local data loading
-        transactions, accounts = load_data_local(params)
+        #transactions, accounts = load_data_local(params)
         #s3 data loading
         #transactions, accounts = load_data_from_s3(params)
-        #transactions, accounts = load_data_from_gdrive(params)
+        transactions, accounts = load_data_from_gdrive(params)
         trans_path, acc_path = save_raw_data(transactions, accounts, params)
 
         logger.info('=' * 60)
