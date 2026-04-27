@@ -12,7 +12,7 @@ if not os.environ.get("DAGSHUB_TOKEN"):
     raise EnvironmentError("DAGSHUB_TOKEN not set")
 os.environ.setdefault("MLFLOW_TRACKING_PASSWORD", os.environ["DAGSHUB_TOKEN"])
 
-from FastAPI.app.main import app  
+from FastAPI.app.main import app
 
 @pytest.fixture(scope="module")
 def client():

@@ -8,6 +8,7 @@ import polars as pl
 import numpy as np
 import pandas as pd
 import warnings
+from pathlib import Path
 from sklearn.metrics import recall_score, f1_score
 
 from sklearn.exceptions import InconsistentVersionWarning

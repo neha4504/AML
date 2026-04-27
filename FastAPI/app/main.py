@@ -98,7 +98,7 @@ def load_model_and_explainer():
 
 @app.get("/")
 async def serve_frontend():
-    html_path = Path("E:\\AML\\FastAPI\\templates\\index.html")
+    html_path = Path("FastAPI/templates/index.html")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 

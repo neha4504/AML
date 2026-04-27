@@ -87,6 +87,9 @@ jobs:
         
       - name: Run FastAPI App tests
         if: success()
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.AML_TEST }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME}}
         run: python -m pytest tests/test_app.py
 
 
