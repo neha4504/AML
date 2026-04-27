@@ -118,7 +118,7 @@ class TestAMLModelLoading(unittest.TestCase):
             f1_prod = f1_score(self.y, prod_pred, zero_division=0)
 
             logger.info(f"Production Recall : {recall_prod:.4f} | New Recall : {recall_new:.4f}")
-            logger.info(f"Production F1  : {f1_prod:.4f} | New F1  : {f1_new:.4f}")
+            logger.info(f"Production F1  : {f1_prod:.4f} | New F1 : {f1_new:.4f}")
 
             self.assertGreaterEqual(
                 f1_new, f1_prod,
