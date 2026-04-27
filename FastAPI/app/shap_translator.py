@@ -69,23 +69,23 @@ def translate_shap_for_llm(shap_explanation_list: list, raw_feat: dict) -> str:
             
         #structural anomalies
         elif "round" in feat and val == 1:
-            amount = raw_features.get("Amount Paid", "Unknown")
+            amount = raw_feat.get("Amount Paid", "Unknown")
             structural_flags.append(f"- Transaction amount (${amount:,.2f}) is suspiciously structured, potentially evading reporting thresholds.")
         elif "baseline" in feat or "deviation" in feat:
-            amount = raw_features.get("Amount Paid", 0)
+            amount = raw_feat.get("Amount Paid", 0)
             structural_flags.append(f"- Transaction amount ({amount:,.2f}) significantly deviates from this account's historical baseline.")
         elif "amount" in feat and "structur" not in feat and "round" not in feat:
             structural_flags.append(f"- Unusual amount patterns detected. This {direction} risk.")
                 
         #account risk profile
         elif "tenure" in feat:
-            days = raw_features.get("account_tenure_days", 0)
+            days = raw_feat.get("account_tenure_days", 0)
             if days < 7:
                 risk_profile_flags.append(f"- Brand new account ({days} days old), significantly elevating shell-company risk.")
             else:
                 risk_profile_flags.append(f"- Established account ({days} days old).")
         elif "entity" in feat and "account" in feat:
-            accs = raw_features.get("entity_account_count", 0)
+            accs = raw_feat.get("entity_account_count", 0)
             risk_profile_flags.append(f"- Account belongs to a massive entity network ({accs} linked accounts), a strong indicator of shell structures.")
         elif "freq_enc" in feat:
             risk_profile_flags.append(f"- Originating or receiving institution has extremely low transaction frequency, suggesting a shell or newly created entity.")
