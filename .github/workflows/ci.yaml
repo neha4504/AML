@@ -41,6 +41,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          pip install -e .
           pip install -r requirements.txt
           pip install -r FastAPI/requirements.txt
           pip install -r requirements-test.txt

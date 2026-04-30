@@ -1,12 +1,6 @@
-auto_mix_prep==0.2.0
-fastapi==0.136.1
-FastAPI==0.136.1
-mlflow==3.11.1
-mlflow_skinny==3.11.1
-mlflow_tracing==3.11.1
-numpy
+fastapi
+uvicorn[standard]
+prometheus-client
+prometheus-fastapi-instrumentator
 openai
-prometheus_client==0.20.0
-prometheus_fastapi_instrumentator==7.1.0
-pydantic==2.13.3
-python-dotenv==1.2.2
+python-dotenv
